@@ -4,7 +4,7 @@ Fig. 07 in my "math facts that live in my head" series. Cut a fraction finer and
 
 A bar of hand-lettered letters. The filled part spells the fraction's name in warm, shimmering marker colours, and the rest of the bar spells the rest of the whole in blues, so it always adds up to 1. Drag the red edge to change the fraction. Shove the heavy throttle underneath to cut the bar 2, 3, up to 6 times finer: the cuts slam down with a CLUNK and the top line reads 2/3 = 8/12, but not one letter moves.
 
-Open it: https://ibeez.github.io/same-amount/ (once published)
+Open it: https://ibeez.github.io/same-amount/
 
 ![The Same Amount, Fig. 07](preview.png)
 

@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Same Amount, Fig. 07</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Special+Elite&display=swap">
+<style>
+  :root {
+    --paper: #fbf5e6;
+    --label: #48545c; /* Blue Grey B47 */
+    --hand: "Gaegu", "Comic Sans MS", "Chalkboard SE", cursive;
+    color-scheme: light;
+  }
+  html, body { background: var(--paper); color: var(--label); }
+  body {
+    margin: 0;
+    min-height: 100%;
+    font-family: var(--hand);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-block: 24px 40px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    gap: 14px;
+  }
+  canvas {
+    width: min(100%, 860px);
+    aspect-ratio: 1000 / 780;
+    max-width: 100%;
+    display: block;
+    touch-action: none;
+    cursor: grab;
+  }
+  canvas:active { cursor: grabbing; }
+  canvas:focus-visible { outline: 2px solid #0846a9; outline-offset: 4px; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .controls button {
+    font: 700 18px/1 var(--hand);
+    color: var(--label);
+    background: transparent;
+    border: 1.5px solid var(--label);
+    border-radius: 10px;
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .controls button:hover { background: rgba(72, 84, 92, 0.08); }
+  .controls button:focus-visible { outline: 2px solid #0846a9; outline-offset: 2px; }
+  .sr {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .sr:focus { position: static; width: auto; height: auto; clip: auto; }
+</style>
+</head>
+<body>
+
+<canvas id="plate" width="1000" height="780" tabindex="0" role="img"
+  aria-label="Fig. 07. The same amount. A bar of hand-lettered letters, part of it filled with the name of a fraction in warm shimmering colors. Drag the red edge to change the fraction. Push the throttle under the bar to cut the bar into finer pieces: two times, three times, up to six times as many. The cuts change and the top line reads, for example, 2/3 = 8/12, but the filled letters never move. Arrow keys: left and right move the throttle, up and down move the edge."></canvas>
+
+<div class="controls">
+  <button id="btn-sound" type="button">sound: on</button>
+  <button class="sr" id="btn-replay" type="button">Replay the demo</button>
+</div>
+<div class="sr" aria-live="polite" id="live"></div>
+
+<script src="palette.js"></script>
+<script>
+const M = window.MARKERS || {
+  "Blue Grey B47": "#48545c",
+  "Cool Grey C43": "#9faab5",
+  "Frost Blue 182": "#7ce7fd",
+  "Dark Blue Light 15": "#519aff",
+  "POSCA Indigo": "#0846a9",
+  "POSCA Tomato Red": "#f8304d",
+  "Warm Coral 208": "#ff5662",
+  "Light Cantaloupe 275": "#ffc137",
+  "POSCA Orange": "#ff8708"
+};
+const PAPER = "#fbf5e6";
+const LABEL = M["Blue Grey B47"];
+const PALE = M["Cool Grey C43"];
+const RED = M["POSCA Tomato Red"];
+// shimmer ramp, deep to light, same warm ramp as Fig. 06
+const WARM = [M["POSCA Tomato Red"], M["Warm Coral 208"], M["POSCA Orange"], M["Light Cantaloupe 275"], M["Warm Coral 208"]];
+// the rest of the whole, in Fig. 06's cool ramp
+const COOL = [M["POSCA Indigo"], M["Dark Blue Light 15"], M["Dark Blue Light 15"], M["Frost Blue 182"], M["POSCA Indigo"]];
+const INK = LABEL;
+const FONT = '"Gaegu", "Comic Sans MS", "Chalkboard SE", cursive';
+const TYPE = '"Special Elite", "Courier New", monospace';
+
+const cv = document.getElementById("plate");
+const g = cv.getContext("2d");
+const S = 1000, H = 780;
+const DPR = Math.min(2, window.devicePixelRatio || 1);
+cv.width = S * DPR; cv.height = H * DPR;
+g.scale(DPR, DPR);
+
+// Paper: one seamless tile behind the whole page, same as Fig. 03. The canvas only paints it when recording.
+const TILE = 420;
+const paper = (() => {
+  const c = document.createElement("canvas");
+  c.width = TILE; c.height = TILE;
+  const p = c.getContext("2d");
+  p.fillStyle = PAPER;
+  p.fillRect(0, 0, TILE, TILE);
+  const img = p.getImageData(0, 0, TILE, TILE), d = img.data;
+  let seed = 42;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const blot = [];
+  for (let i = 0; i < 6; i++) blot.push([rnd() * TILE, rnd() * TILE, 60 + rnd() * 110, rnd() < 0.5 ? -1 : 1]);
+  for (let y = 0; y < TILE; y++) {
+    for (let x = 0; x < TILE; x++) {
+      let n = (rnd() - 0.5) * 11;
+      for (const [bx, by, br, s] of blot) {
+        let dx = Math.abs(x - bx), dy = Math.abs(y - by);
+        dx = Math.min(dx, TILE - dx); dy = Math.min(dy, TILE - dy);
+        const q = (dx * dx + dy * dy) / (br * br);
+        if (q < 1) n += s * 4 * (1 - q);
+      }
+      const idx = (x + y * TILE) * 4;
+      d[idx] += n; d[idx + 1] += n; d[idx + 2] += n * 1.1;
+    }
+  }
+  p.putImageData(img, 0, 0);
+  p.lineCap = "round";
+  for (let i = 0; i < 220; i++) {
+    const x = rnd() * TILE, y = rnd() * TILE, a = rnd() * Math.PI, l = 4 + rnd() * 12;
+    const mx = (rnd() - 0.5) * 3, my = (rnd() - 0.5) * 3;
+    p.strokeStyle = rnd() < 0.6 ? "rgba(120,100,70,0.09)" : "rgba(255,255,255,0.45)";
+    p.lineWidth = 0.6 + rnd() * 0.7;
+    for (const ox of [-TILE, 0, TILE]) for (const oy of [-TILE, 0, TILE]) {
+      p.beginPath();
+      p.moveTo(x + ox, y + oy);
+      p.quadraticCurveTo(x + ox + Math.cos(a) * l * 0.5 + mx, y + oy + Math.sin(a) * l * 0.5 + my, x + ox + Math.cos(a) * l, y + oy + Math.sin(a) * l);
+      p.stroke();
+    }
+  }
+  return c;
+})();
+document.documentElement.style.background = `${PAPER} url(${paper.toDataURL()}) repeat`;
+document.body.style.background = "transparent";
+const paperPattern = g.createPattern(paper, "repeat");
+
+// The bar: 24 letters wide, so every fraction built from halves, thirds, fourths, sixths
+// and eighths ends exactly between two letters.
+const COLS = 24, ROWS = 5, CW = 40, CH = 56;
+const BW = COLS * CW, BH = ROWS * CH;
+const BX = (S - BW) / 2, BY = 240;
+// the throttle lies sideways under the bar: six notches, x1 to x6
+const NOTCHES = 6;
+const TY = 650, TX0 = 160, TX1 = 840;
+const TX = n => TX0 + n * (TX1 - TX0) / (NOTCHES - 1);
+
+const STOPS = [[1, 8], [1, 6], [1, 4], [1, 3], [3, 8], [1, 2], [5, 8], [2, 3], [3, 4], [5, 6], [7, 8], [1, 1]];
+const NAMES = ["one eighth", "one sixth", "one fourth", "one third", "three eighths", "one half",
+  "five eighths", "two thirds", "three fourths", "five sixths", "seven eighths", "one whole"];
+const HALF = 5;
+const val = i => STOPS[i][0] / STOPS[i][1];
+
+const LOOP = 20;
+const SHIM = (2 * Math.PI * 5) / LOOP, WOBBLE = (2 * Math.PI * 8) / LOOP;
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let demo = !reduced, recording = false;
+
+// state
+let stop = HALF, ePos = val(HALF), eVel = 0;        // the red edge
+let pos = 0, vel = 0, hand = 0, notch = 0, kIdx = 0; // the throttle
+let settled = true;
+let drag = null;
+let shake = 0, drop = 1, dropRate = 6;
+const jx = new Float32Array(COLS * ROWS), jy = new Float32Array(COLS * ROWS);
+const jvx = new Float32Array(COLS * ROWS), jvy = new Float32Array(COLS * ROWS);
+let seed = 7;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+function jolt(amp) {
+  if (reduced) return;
+  for (let i = 0; i < jx.length; i++) {
+    jvx[i] += (rnd() - 0.5) * amp * 30;
+    jvy[i] -= (0.3 + rnd()) * amp * 30;
+  }
+}
+function slam(power, rate) {
+  if (reduced) return;
+  shake = Math.max(shake, power);
+  drop = 0; dropRate = rate;
+}
+
+const live = document.getElementById("live");
+const say = () => {
+  const [a, b] = STOPS[stop], k = kIdx + 1;
+  live.textContent = `${a}/${b} = ${a * k}/${b * k}. Same amount.`;
+};
+
+// ---------- physics ----------
+function step(dt) {
+  // throttle: heavy. Held, it trails the hand on a soft spring and catches in each notch.
+  // Let go, it slides to the nearest notch and clunks in with a little overshoot.
+  let F;
+  if (drag && drag.type === "thr" || demo) {
+    const near = Math.round(pos);
+    F = 34 * (hand - pos) - 8 * vel - 26 * (pos - near) * (Math.abs(hand - pos) < 0.6 ? 1 : 0.35);
+  } else {
+    F = 260 * (notch - pos) - 15 * vel;
+  }
+  vel += F * dt; pos += vel * dt;
+  if (pos < 0) { pos = 0; vel = -vel * 0.3; }
+  if (pos > NOTCHES - 1) { pos = NOTCHES - 1; vel = -vel * 0.3; }
+  const n = Math.round(pos);
+  if (n !== kIdx && Math.abs(pos - n) < 0.16) {
+    kIdx = n;
+    // the cuts slam down: CLUNK, krsshk
+    sfx("lock");
+    slam(15, 9);
+    jolt(12);
+    say();
+  }
+  if (!(drag && drag.type === "thr") && !demo && !settled && Math.abs(vel) < 0.08 && Math.abs(pos - notch) < 0.03) {
+    settled = true;
+    // the lever settles back into its notch: a small tick
+    sfx("tick", kIdx);
+    slam(4, 6);
+    jolt(3);
+  }
+  // edge: light and snappy, springs onto each fraction
+  const Fe = 420 * (val(stop) - ePos) - 24 * eVel;
+  eVel += Fe * dt; ePos += eVel * dt;
+  // letters spring back into their own cells
+  const kj = 420, cj = 13, damp = Math.exp(-cj * dt);
+  for (let i = 0; i < jx.length; i++) {
+    jvx[i] = (jvx[i] - kj * jx[i] * dt) * damp; jx[i] += jvx[i] * dt;
+    jvy[i] = (jvy[i] - kj * jy[i] * dt) * damp; jy[i] += jvy[i] * dt;
+  }
+  shake *= Math.exp(-11 * dt);
+  drop = Math.min(1, drop + dropRate * dt);
+}
+
+function setStop(i) {
+  i = Math.max(0, Math.min(STOPS.length - 1, i));
+  if (i === stop) return;
+  stop = i;
+  sfx("xylo", i);
+  jolt(3);
+  slam(2.5, 9);
+  say();
+}
+function setNotch(n) {
+  notch = Math.max(0, Math.min(NOTCHES - 1, n));
+  settled = false;
+}
+
+// ---------- the ghost demo ----------
+// One seamless loop that starts and ends at 1/2, x1. Throttle keys are [time, notch], edge keys are [time, stop].
+const THR_KEYS = [[0, 0], [2, 0], [4.4, 3], [5.6, 3], [6.6, 1], [9.2, 1], [10.8, 5], [12.2, 5], [13.2, 2], [16, 2], [17.6, 0], [20, 0]];
+const EDGE_KEYS = [[0, 5], [7.3, 6], [7.6, 7], [14, 6], [14.2, 5], [14.4, 4], [14.6, 3], [18.4, 4], [18.7, 5]];
+const ease = x => x * x * (3 - 2 * x);
+function demoTargets(t) {
+  for (let i = 0; i < THR_KEYS.length - 1; i++) {
+    const [t0, a] = THR_KEYS[i], [t1, b] = THR_KEYS[i + 1];
+    if (t >= t0 && t < t1) { hand = a + (b - a) * ease((t - t0) / (t1 - t0)); break; }
+  }
+  let s = EDGE_KEYS[0][1];
+  for (const [tk, si] of EDGE_KEYS) if (t >= tk) s = si;
+  setStop(s);
+}
+
+// ---------- sound: all synthesized, original, soft ----------
+// Notes and recipes are in ../chiptune-music.md.
+let ac = null, master, musicBus, leadBus, sfxBus, noise, crush, pulse, timer = null;
+let muted = false;
+const midi = m => 440 * Math.pow(2, (m - 69) / 12);
+const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+const N = s => s === "-" ? null : 12 * (+s.slice(1) + 1) + PC[s[0]];
+// eight bars of eighth notes, C major pentatonic, 96 BPM: 8 bars is exactly the 20 second loop
+const MEL = [
+  "E5 G5 A5 G5 E5 - D5 -", "C5 D5 E5 G5 E5 - - -", "E5 G5 A5 C6 A5 G5 E5 -", "D5 E5 D5 C5 D5 - - -",
+  "G5 A5 G5 E5 G5 A5 C6 -", "D6 C6 A5 G5 A5 - G5 -", "E5 G5 A5 G5 E5 D5 C5 D5", "E5 - D5 - C5 - - -"
+].map(b => b.split(" ").map(N));
+const ROOTS = ["C3", "A2", "F2", "G2", "C3", "A2", "F2", "G2"].map(N);
+const EIGHTH = 60 / 96 / 2;
+const LADDER = [0, 2, 4, 7, 9];
+const pent = i => 72 + 12 * Math.floor(i / 5) + LADDER[i % 5];   // C5 upward
+
+// the whole sound graph, built on whatever context `ac` is: live, or offline for the video
+function buildGraph() {
+  const comp = ac.createDynamicsCompressor();
+  comp.threshold.value = -16; comp.ratio.value = 5;
+  master = ac.createGain(); master.gain.value = muted ? 0 : 0.9;
+  master.connect(comp); comp.connect(ac.destination);
+  musicBus = ac.createGain(); musicBus.gain.value = 0.5; musicBus.connect(master);
+  // the carpet: a long soft room the music sits in
+  const verb = ac.createConvolver(), wet = ac.createGain();
+  const len = ac.sampleRate * 3, ir = ac.createBuffer(2, len, ac.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  }
+  verb.buffer = ir; wet.gain.value = 0.45;
+  musicBus.connect(verb); verb.connect(wet); wet.connect(master);
+  const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2400;
+  leadBus = ac.createGain(); leadBus.connect(lp); lp.connect(musicBus);
+  sfxBus = ac.createGain(); sfxBus.gain.value = 0.9; sfxBus.connect(master);
+  noise = ac.createBuffer(1, ac.sampleRate * 0.5, ac.sampleRate);
+  const d = noise.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  // 8-bit crunch: 1-bit noise held for a few samples at a time, like an old console's noise channel
+  crush = ac.createBuffer(1, ac.sampleRate * 0.3, ac.sampleRate);
+  const c = crush.getChannelData(0), hold = Math.round(ac.sampleRate / 3500);
+  for (let i = 0, v = 1; i < c.length; i++) { if (i % hold === 0) v = Math.random() < 0.5 ? -1 : 1; c[i] = v; }
+  // 25% pulse, the softer cousin of a square wave
+  const n = 32, re = new Float32Array(n), im = new Float32Array(n);
+  for (let k = 1; k < n; k++) re[k] = (2 / (k * Math.PI)) * Math.sin(k * Math.PI * 0.25);
+  pulse = ac.createPeriodicWave(re, im);
+}
+
+function audioInit() {
+  if (ac) { ac.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  ac = new AC();
+  buildGraph();
+  let stepI = 0, next = ac.currentTime + 0.12;
+  timer = setInterval(() => {
+    while (next < ac.currentTime + 0.12) { music(stepI, next); stepI = (stepI + 1) % 64; next += EIGHTH; }
+  }, 25);
+}
+
+function tone(bus, wave, f, t, dur, vol, glide) {
+  const o = ac.createOscillator(), e = ac.createGain();
+  if (wave === "pulse") o.setPeriodicWave(pulse); else o.type = wave;
+  o.frequency.setValueAtTime(f, t);
+  if (glide) o.frequency.exponentialRampToValueAtTime(glide, t + dur * 0.6);
+  e.gain.setValueAtTime(0.0001, t);
+  e.gain.exponentialRampToValueAtTime(vol, t + 0.004);
+  e.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(e); e.connect(bus);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+// a soft flute: sine plus a little triangle, slow breathy attack, vibrato that arrives late,
+// and a puff of filtered noise at the start of each note (the "chiff")
+function flute(f, t, dur, vol) {
+  const o1 = ac.createOscillator(), o2 = ac.createOscillator(), e = ac.createGain(), m2 = ac.createGain();
+  o1.type = "sine"; o2.type = "triangle";
+  o1.frequency.value = f; o2.frequency.value = f;
+  m2.gain.value = 0.25;
+  const lfo = ac.createOscillator(), depth = ac.createGain();
+  lfo.frequency.value = 5;
+  depth.gain.setValueAtTime(0, t);
+  depth.gain.linearRampToValueAtTime(f * 0.006, t + Math.min(0.4, dur));
+  lfo.connect(depth); depth.connect(o1.frequency); depth.connect(o2.frequency);
+  e.gain.setValueAtTime(0, t);
+  e.gain.linearRampToValueAtTime(vol, t + 0.08);
+  e.gain.setValueAtTime(vol, t + dur);
+  e.gain.linearRampToValueAtTime(0, t + dur + 0.25);
+  o1.connect(e); o2.connect(m2); m2.connect(e); e.connect(leadBus);
+  for (const o of [o1, o2, lfo]) { o.start(t); o.stop(t + dur + 0.3); }
+  const s = ac.createBufferSource(), bp = ac.createBiquadFilter(), ne = ac.createGain();
+  s.buffer = noise; bp.type = "bandpass"; bp.frequency.value = f * 2; bp.Q.value = 1.5;
+  ne.gain.setValueAtTime(vol * 0.5, t); ne.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+  s.connect(bp); bp.connect(ne); ne.connect(leadBus);
+  s.start(t); s.stop(t + 0.15);
+}
+// pad: each chord swells in slowly and hangs over the bar line
+function pad(notes, t, dur) {
+  for (const m of notes) for (const cents of [-5, 5]) {
+    const o = ac.createOscillator(), e = ac.createGain();
+    o.type = "sine"; o.frequency.value = midi(m); o.detune.value = cents;
+    e.gain.setValueAtTime(0, t);
+    e.gain.linearRampToValueAtTime(0.022, t + 0.9);
+    e.gain.setValueAtTime(0.022, t + dur);
+    e.gain.linearRampToValueAtTime(0, t + dur + 1.2);
+    o.connect(e); e.connect(musicBus);
+    o.start(t); o.stop(t + dur + 1.3);
+  }
+}
+const CHORDS = [[60, 64, 67], [57, 60, 64], [57, 60, 65], [55, 59, 62], [60, 64, 67], [57, 60, 64], [57, 60, 65], [55, 59, 62]];
+function music(i, t) {
+  const bar = i >> 3, s = i & 7;
+  const m = MEL[bar][s];
+  if (m) {
+    // notes are legato: each one holds through the rests after it
+    let len = 1;
+    while (s + len < 8 && MEL[bar][s + len] === null) len++;
+    flute(midi(m), t, len * EIGHTH * 0.92, 0.09);
+  }
+  if (s === 0) pad(CHORDS[bar], t, 8 * EIGHTH);
+  if (s === 0 || s === 4) {
+    const o = ac.createOscillator(), e = ac.createGain();
+    o.type = "sine"; o.frequency.value = midi(ROOTS[bar]);
+    e.gain.setValueAtTime(0, t);
+    e.gain.linearRampToValueAtTime(0.16, t + 0.04);
+    e.gain.exponentialRampToValueAtTime(0.0001, t + 4 * EIGHTH);
+    o.connect(e); e.connect(musicBus);
+    o.start(t); o.stop(t + 4 * EIGHTH + 0.05);
+  }
+}
+function crunch(t) {
+  const s = ac.createBufferSource(), bp = ac.createBiquadFilter(), e = ac.createGain();
+  s.buffer = crush;
+  s.playbackRate.setValueAtTime(1.2, t);
+  s.playbackRate.exponentialRampToValueAtTime(0.45, t + 0.16);
+  bp.type = "bandpass"; bp.frequency.value = 2200; bp.Q.value = 0.8;
+  e.gain.setValueAtTime(0.0001, t);
+  e.gain.exponentialRampToValueAtTime(0.2, t + 0.004);
+  e.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+  s.connect(bp); bp.connect(e); e.connect(sfxBus);
+  s.start(t); s.stop(t + 0.2);
+}
+function duck(t) {
+  musicBus.gain.cancelScheduledValues(t);
+  musicBus.gain.setTargetAtTime(0.25, t, 0.02);
+  musicBus.gain.setTargetAtTime(0.5, t + 0.15, 0.12);
+}
+function sfx(kind, arg, at) {
+  // while rendering the video, sounds are only logged; renderAudio plays them back offline
+  if (recording) { if (logT !== null) events.push([kind, arg, logT]); return; }
+  if (!ac || muted) return;
+  const t = at ?? ac.currentTime + 0.005;
+  if (kind === "tick") {
+    tone(sfxBus, "square", midi(pent(5 + arg)), t, 0.045, 0.05);
+  } else if (kind === "lock") {
+    // CLUNK: a low square thud that falls in pitch, a body under it, then the krsshk
+    tone(sfxBus, "square", 170, t, 0.14, 0.16, 48);
+    tone(sfxBus, "triangle", 95, t, 0.24, 0.4, 38);
+    crunch(t + 0.012);
+    duck(t);
+  } else if (kind === "xylo") {
+    const f = midi(pent(arg));
+    tone(sfxBus, "sine", f, t, 0.4, 0.2);
+    tone(sfxBus, "sine", f * 4, t, 0.1, 0.05);
+    duck(t);
+  }
+}
+
+const btnSound = document.getElementById("btn-sound");
+btnSound.onclick = () => {
+  audioInit();
+  muted = !muted;
+  if (master) master.gain.setTargetAtTime(muted ? 0 : 0.9, ac.currentTime, 0.03);
+  btnSound.textContent = muted ? "sound: off" : "sound: on";
+};
+
+// ---------- drawing ----------
+function wobblyText(text, x, y, t, still, seedT = 0, amp = 1) {
+  const align = g.textAlign;
+  const total = g.measureText(text).width;
+  let cx = align === "center" ? x - total / 2 : x;
+  g.textAlign = "left";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i], w = g.measureText(ch).width;
+    const ph = (seedT + i) * 2.39;
+    g.save();
+    g.translate(cx + w / 2 + still * amp * Math.sin(t * WOBBLE * 0.5 + ph), y + still * amp * 1.3 * Math.cos(t * WOBBLE * 0.5 + ph * 1.7));
+    g.rotate(still * amp * 0.04 * Math.sin(t * WOBBLE * 0.5 + ph * 2.3));
+    g.fillText(ch, -w / 2, 0);
+    g.restore();
+    cx += w;
+  }
+  g.textAlign = align;
+}
+
+function drawHeader(t, still) {
+  g.textBaseline = "alphabetic";
+  g.textAlign = "left";
+  g.font = `400 24px ${FONT}`;
+  g.globalAlpha = 0.7;
+  g.fillStyle = LABEL;
+  wobblyText("Fig. 07", 44, 62, t, still, 40, 0.8);
+  g.globalAlpha = 1;
+  const [a, b] = STOPS[stop], k = kIdx + 1;
+  g.textAlign = "center";
+  g.font = `700 76px ${FONT}`;
+  wobblyText(`${a}/${b} = ${a * k}/${b * k}`, S / 2, 165, t, still, 3, 1.4);
+}
+
+// Printshop rules: one long line of uneven ink, like a worn ribbon or a letterpress rule.
+// The texture is seeded by where the line is, so a line keeps its own blotches and never flickers.
+function inkLine(x0, y0, x1, y1, w, key, alpha = 1) {
+  const len = Math.hypot(x1 - x0, y1 - y0);
+  if (len < 1) return;
+  const ux = (x1 - x0) / len, uy = (y1 - y0) / len;
+  const k = Math.sin(key * 12.9898) * 43758.5453, p1 = k % 6.28, p2 = (k * 1.7) % 6.28;
+  const seg = 5;
+  g.strokeStyle = INK; g.lineCap = "butt";
+  for (let s = 0; s < len; s += seg) {
+    const d = (s + (x0 + y0) * 0.37);
+    // a brass rule: dead straight, even weight. Only the inking varies, faintly,
+    // with the odd speck where the ink skipped.
+    let ink = 0.92 + 0.05 * Math.sin(d * 0.021 + p1) + 0.03 * Math.sin(d * 0.093 + p2);
+    const dry = Math.sin(d * 0.31 + p2 * 3) * Math.sin(d * 0.057 + p1);
+    if (dry > 0.93) ink *= 0.7;
+    const jit = 0;
+    g.globalAlpha = Math.max(0.12, Math.min(1, ink)) * alpha;
+    g.lineWidth = w;
+    const e = Math.min(len, s + seg + 0.6);
+    g.beginPath();
+    g.moveTo(x0 + ux * s - uy * jit, y0 + uy * s + ux * jit);
+    g.lineTo(x0 + ux * e - uy * jit, y0 + uy * e + ux * jit);
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+}
+
+// how far a rule misses its meeting point, fixed per joint: about -2 (shy) to +3 (overshoots)
+const joint = n => {
+  const h = Math.sin(n * 78.233 + 1.3) * 43758.5453;
+  return (h - Math.floor(h)) * 5 - 2;
+};
+
+function drawBar(t, still) {
+  const fill = Math.round(COLS * val(stop));
+  const name = NAMES[stop] + " ";
+  // the rest of the whole, spelled in blue: 1/3 sits next to "two thirds"
+  const rest = stop < STOPS.length - 1 ? NAMES[STOPS.length - 2 - stop] + " " : "";
+  const restCols = COLS - fill;
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const i = c + r * COLS;
+      const px = BX + (c + 0.5) * CW + jx[i], py = BY + (r + 0.5) * CH + jy[i];
+      const ph = ((c * 73 + r * 151) % 97) / 97 * 2 * Math.PI;
+      const wx = still * 1.2 * Math.sin(t * WOBBLE + ph * 2), wy = still * 1.2 * Math.cos(t * WOBBLE + ph * 3);
+      const red = c < fill;
+      const ch = red ? name[(r * fill + c) % name.length] : rest[(r * restCols + c - fill) % rest.length];
+      if (ch === " ") continue;
+      const wave = 0.5 + 0.5 * Math.sin(t * SHIM * still - c * 0.16 + r * 0.3);
+      const color = (red ? WARM : COOL)[Math.min(4, Math.floor(wave ** 1.6 * 5))];
+      g.font = `700 40px ${FONT}`;
+      g.fillStyle = color; g.strokeStyle = color;
+      g.lineWidth = 2.4; g.lineJoin = "round";
+      g.save();
+      g.translate(px + wx, py + wy);
+      g.rotate(still * 0.07 * Math.sin(t * WOBBLE + ph) + jx[i] * 0.02);
+      g.strokeText(ch, 0, 1);
+      g.fillText(ch, 0, 1);
+      g.restore();
+    }
+  }
+  // outline
+  // outline: four set rules butted together. Hand-set rules never quite meet:
+  // one runs a hair long, one stops a hair short, one sits half a point off.
+  inkLine(BX - 1.7 - joint(1), BY, BX + BW + 1.7 + joint(2), BY, 3.4, 1);
+  inkLine(BX - 1.7 - joint(3), BY + BH + joint(9) * 0.3, BX + BW + 1.7 + joint(4), BY + BH + joint(9) * 0.3, 3.4, 2);
+  inkLine(BX + joint(10) * 0.3, BY + 1.7 - joint(5), BX + joint(10) * 0.3, BY + BH - 1.7 + joint(6), 3.4, 3);
+  inkLine(BX + BW, BY + 1.7 - joint(7), BX + BW, BY + BH - 1.7 + joint(8), 3.4, 4);
+  // cuts slam down from above
+  const [a, b] = STOPS[stop], d = b * (kIdx + 1), edgeCut = a * (kIdx + 1);
+  const e = 1 - Math.pow(1 - drop, 3);
+  const lift = 70 * (1 - e);
+  for (let q = 1; q < d; q++) {
+    if (q === edgeCut) continue;
+    const x = BX + q * BW / d;
+    // each cut lands a little proud of the rule or a little shy of it
+    const top = BY - joint(30 + q / d), bot = BY + BH + joint(60 + q / d);
+    inkLine(x, Math.max(top - lift, BY - 70), x, top - lift + (bot - top) * (0.4 + 0.6 * e), 2.6, 10 + q / d, 0.85);
+  }
+  // the red edge
+  const ex = BX + ePos * BW;
+  g.strokeStyle = RED; g.fillStyle = RED; g.lineWidth = 6; g.lineCap = "round";
+  g.beginPath(); g.moveTo(ex, BY - 22); g.lineTo(ex, BY + BH + 22); g.stroke();
+  const grabbed = drag && drag.type === "edge";
+  for (const yy of [BY - 30, BY + BH + 30]) {
+    g.beginPath(); g.arc(ex, yy, grabbed ? 15 : 12, 0, Math.PI * 2); g.fill();
+  }
+  g.lineCap = "butt";
+}
+
+function drawThrottle(t, still) {
+  // the slot
+  g.fillStyle = "rgba(72, 84, 92, 0.06)";
+  g.fillRect(TX0 - 50, TY - 15, TX1 - TX0 + 100, 30);
+  inkLine(TX0 - 51.5 - joint(11), TY - 15, TX1 + 51.5 + joint(12), TY - 15, 3, 5);
+  inkLine(TX0 - 51.5 - joint(13), TY + 15, TX1 + 51.5 + joint(14), TY + 15, 3, 6);
+  inkLine(TX0 - 50, TY - 13.5 - joint(15), TX0 - 50, TY + 13.5 + joint(16), 3, 7);
+  inkLine(TX1 + 50, TY - 13.5 - joint(17), TX1 + 50, TY + 13.5 + joint(18), 3, 8);
+  // notches and labels
+  g.textAlign = "center"; g.textBaseline = "middle";
+  g.font = `400 30px ${TYPE}`;
+  for (let n = 0; n < NOTCHES; n++) {
+    const x = TX(n);
+    inkLine(x, TY - 48, x, TY - 26, 3, 20 + n, n === kIdx ? 1 : 0.5);
+    g.globalAlpha = n === kIdx ? 1 : 0.55;
+    g.fillStyle = INK;
+    g.fillText("x" + (n + 1), x, TY + 72);
+  }
+  g.globalAlpha = 1;
+  // the knob leans into the push and squashes as it lands
+  const x = TX0 + pos * (TX1 - TX0) / (NOTCHES - 1);
+  const lean = Math.max(-0.22, Math.min(0.22, -vel * 0.035));
+  const sq = 1 + Math.min(0.12, shake * 0.012);
+  g.save();
+  g.translate(x, TY);
+  g.rotate(lean);
+  g.scale(sq, 1 / sq);
+  g.fillStyle = RED; g.strokeStyle = LABEL; g.lineWidth = 3;
+  g.beginPath(); g.roundRect(-34, -42, 68, 84, 16); g.fill(); g.stroke();
+  g.strokeStyle = "rgba(255,255,255,0.75)"; g.lineWidth = 3; g.lineCap = "round";
+  for (const gx of [-12, 0, 12]) { g.beginPath(); g.moveTo(gx, -20); g.lineTo(gx, 20); g.stroke(); }
+  g.lineCap = "butt";
+  g.restore();
+}
+
+function paint(t, still) {
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  g.clearRect(0, 0, S, H);
+  if (recording) { g.fillStyle = paperPattern; g.fillRect(0, 0, S, H); }
+  g.translate(shake * Math.sin(t * 91.7), shake * Math.cos(t * 77.3));
+  drawHeader(t, still);
+  drawBar(t, still);
+  drawThrottle(t, still);
+}
+
+// ---------- loop ----------
+let last = 0, loopStart = 0;
+const now = () => performance.now();
+function frame(ms) {
+  const dt = Math.min(1 / 30, (ms - last) / 1000);
+  last = ms;
+  const t = (ms - loopStart) / 1000;
+  if (demo && !drag) demoTargets(t % LOOP);
+  const n = Math.ceil(dt * 240);
+  for (let i = 0; i < n; i++) step(dt / n);
+  paint(t, reduced ? 0 : 1);
+  requestAnimationFrame(frame);
+}
+
+// ---------- video ----------
+// ?render steps the demo one frame at a time at 30 fps and posts each frame to render.py.
+// One silent lap first, so frame 0 matches the end of the loop. Sounds from the recorded lap
+// are logged, then played back with the music in an OfflineAudioContext and posted as a WAV.
+const FPS = 30;
+let logT = null;
+const events = [];
+async function renderVideo() {
+  recording = true; demo = true;
+  const tick = t => { demoTargets(t % LOOP); for (let i = 0; i < 8; i++) step(1 / FPS / 8); };
+  for (let f = 0; f < LOOP * FPS; f++) tick(f / FPS);
+  for (let f = 0; f < LOOP * FPS; f++) {
+    const t = f / FPS;
+    logT = t + 0.5 / FPS; tick(t); logT = null;
+    paint(t, 1);
+    const blob = await new Promise(r => cv.toBlob(r, "image/png"));
+    await fetch(`/frame?i=${f}`, { method: "POST", body: blob });
+  }
+  await fetch("/audio", { method: "POST", body: await renderAudio() });
+  await fetch("/done", { method: "POST" });
+}
+async function renderAudio() {
+  const SR = 48000, TAIL = 3, n = LOOP * SR;
+  ac = new OfflineAudioContext(2, SR * (LOOP + TAIL), SR);
+  buildGraph();
+  recording = false;
+  for (let i = 0; i < 64; i++) music(i, i * EIGHTH);
+  for (const [k, a, t] of events) sfx(k, a, t);
+  const buf = await ac.startRendering();
+  const L = buf.getChannelData(0), R = buf.getChannelData(1);
+  // fold the tail (reverb, pads) back onto the start so the loop is seamless
+  for (let i = n; i < L.length; i++) { L[i - n] += L[i]; R[i - n] += R[i]; }
+  const out = new DataView(new ArrayBuffer(44 + n * 4));
+  const str = (o, x) => { for (let i = 0; i < x.length; i++) out.setUint8(o + i, x.charCodeAt(i)); };
+  str(0, "RIFF"); out.setUint32(4, 36 + n * 4, true); str(8, "WAVE"); str(12, "fmt ");
+  out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 2, true);
+  out.setUint32(24, SR, true); out.setUint32(28, SR * 4, true); out.setUint16(32, 4, true); out.setUint16(34, 16, true);
+  str(36, "data"); out.setUint32(40, n * 4, true);
+  for (let i = 0; i < n; i++) {
+    out.setInt16(44 + i * 4, Math.max(-1, Math.min(1, L[i])) * 32767, true);
+    out.setInt16(46 + i * 4, Math.max(-1, Math.min(1, R[i])) * 32767, true);
+  }
+  return new Blob([out], { type: "audio/wav" });
+}
+
+// ---------- input ----------
+function toCanvas(e) {
+  const b = cv.getBoundingClientRect();
+  return [(e.clientX - b.left) * S / b.width, (e.clientY - b.top) * H / b.height];
+}
+const handAt = px => Math.max(-0.3, Math.min(NOTCHES - 0.7, (px - TX0) / ((TX1 - TX0) / (NOTCHES - 1))));
+function nearestStop(px) {
+  const v = (px - BX) / BW;
+  let best = 0;
+  for (let i = 1; i < STOPS.length; i++) if (Math.abs(val(i) - v) < Math.abs(val(best) - v)) best = i;
+  return best;
+}
+function stopDemo() {
+  if (!demo) return;
+  demo = false;
+  notch = Math.round(pos);
+}
+cv.addEventListener("pointerdown", e => {
+  audioInit();
+  const [px, py] = toCanvas(e);
+  if (py > BY - 70 && py < BY + BH + 70) {
+    stopDemo();
+    cv.setPointerCapture(e.pointerId);
+    drag = { type: "edge" };
+    setStop(nearestStop(px));
+  } else if (py > TY - 80 && py < TY + 100) {
+    stopDemo();
+    cv.setPointerCapture(e.pointerId);
+    drag = { type: "thr" };
+    hand = handAt(px);
+  }
+});
+cv.addEventListener("pointermove", e => {
+  if (!drag) return;
+  const [px] = toCanvas(e);
+  if (drag.type === "edge") setStop(nearestStop(px));
+  else hand = handAt(px);
+});
+function release() {
+  if (!drag) return;
+  // it goes where the hand let go, however far behind the heavy knob still is
+  if (drag.type === "thr") setNotch(Math.round(hand));
+  drag = null;
+}
+cv.addEventListener("pointerup", release);
+cv.addEventListener("pointercancel", release);
+cv.addEventListener("keydown", e => {
+  const moves = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [1, 0], ArrowDown: [-1, 0] };
+  const m = moves[e.key];
+  if (!m) return;
+  e.preventDefault();
+  audioInit();
+  stopDemo();
+  if (m[0]) setStop(stop + m[0]);
+  else setNotch(notch + m[1]);
+});
+document.getElementById("btn-replay").onclick = () => {
+  stopDemo();
+  demo = !reduced;
+  loopStart = now();
+};
+
+say();
+document.fonts.load(`700 76px "Gaegu"`).finally(() => {
+  document.fonts.load(`28px "Special Elite"`).finally(() => location.search.includes("render") ? renderVideo()
+    : requestAnimationFrame(ms => { last = loopStart = ms; frame(ms); }));
+});
+</script>
+</body>
+</html>

@@ -160,7 +160,9 @@ const STOPS = [[1, 8], [1, 6], [1, 4], [1, 3], [3, 8], [1, 2], [5, 8], [2, 3], [
 const NAMES = ["one eighth", "one sixth", "one fourth", "one third", "three eighths", "one half",
   "five eighths", "two thirds", "three fourths", "five sixths", "seven eighths", "one whole"];
 const HALF = 5;
-const val = i => STOPS[i][0] / STOPS[i][1];
+// stop -1 is the edge dragged all the way back: 0/0, which gets a confused face
+const ZERO = -1, HUH = "(·_·)?";
+const val = i => i === ZERO ? 0 : STOPS[i][0] / STOPS[i][1];
 
 const LOOP = 20;
 const SHIM = (2 * Math.PI * 5) / LOOP, WOBBLE = (2 * Math.PI * 8) / LOOP;
@@ -193,6 +195,7 @@ function slam(power, rate) {
 
 const live = document.getElementById("live");
 const say = () => {
+  if (stop === ZERO) { live.textContent = "0/0 = huh?"; return; }
   const [a, b] = STOPS[stop], k = kIdx + 1;
   live.textContent = `${a}/${b} = ${a * k}/${b * k}. Same amount.`;
 };
@@ -241,10 +244,10 @@ function step(dt) {
 }
 
 function setStop(i) {
-  i = Math.max(0, Math.min(STOPS.length - 1, i));
+  i = Math.max(ZERO, Math.min(STOPS.length - 1, i));
   if (i === stop) return;
   stop = i;
-  sfx("xylo", i);
+  sfx(i === ZERO ? "huh" : "xylo", i);
   jolt(3);
   slam(2.5, 9);
   say();
@@ -429,6 +432,11 @@ function sfx(kind, arg, at) {
     tone(sfxBus, "triangle", 95, t, 0.24, 0.4, 38);
     crunch(t + 0.012);
     duck(t);
+  } else if (kind === "huh") {
+    // a puzzled "hm?": dips, then lifts like a question
+    tone(sfxBus, "triangle", midi(pent(3)), t, 0.16, 0.12, midi(pent(1)));
+    tone(sfxBus, "triangle", midi(pent(1)), t + 0.2, 0.22, 0.12, midi(pent(4)));
+    duck(t);
   } else if (kind === "xylo") {
     const f = midi(pent(arg));
     tone(sfxBus, "sine", f, t, 0.4, 0.2);
@@ -472,9 +480,10 @@ function drawHeader(t, still) {
   g.fillStyle = LABEL;
   wobblyText("Fig. 07", 44, 62, t, still, 40, 0.8);
   g.globalAlpha = 1;
-  const [a, b] = STOPS[stop], k = kIdx + 1;
   g.textAlign = "center";
   g.font = `700 76px ${FONT}`;
+  if (stop === ZERO) { wobblyText(`0/0 = ${HUH}`, S / 2, 165, t, still, 3, 1.4); return; }
+  const [a, b] = STOPS[stop], k = kIdx + 1;
   wobblyText(`${a}/${b} = ${a * k}/${b * k}`, S / 2, 165, t, still, 3, 1.4);
 }
 
@@ -514,9 +523,10 @@ const joint = n => {
 
 function drawBar(t, still) {
   const fill = Math.round(COLS * val(stop));
-  const name = NAMES[stop] + " ";
+  const name = stop === ZERO ? " " : NAMES[stop] + " ";
   // the rest of the whole, spelled in blue: 1/3 sits next to "two thirds"
-  const rest = stop < STOPS.length - 1 ? NAMES[STOPS.length - 2 - stop] + " " : "";
+  // at 0/0 the whole bar is the rest: "one whole" in blue
+  const rest = stop === ZERO ? NAMES[STOPS.length - 1] + " " : stop < STOPS.length - 1 ? NAMES[STOPS.length - 2 - stop] + " " : "";
   const restCols = COLS - fill;
   g.textAlign = "center";
   g.textBaseline = "middle";
@@ -550,7 +560,7 @@ function drawBar(t, still) {
   inkLine(BX + joint(10) * 0.3, BY + 1.7 - joint(5), BX + joint(10) * 0.3, BY + BH - 1.7 + joint(6), 3.4, 3);
   inkLine(BX + BW, BY + 1.7 - joint(7), BX + BW, BY + BH - 1.7 + joint(8), 3.4, 4);
   // cuts slam down from above
-  const [a, b] = STOPS[stop], d = b * (kIdx + 1), edgeCut = a * (kIdx + 1);
+  const [a, b] = stop === ZERO ? [0, 0] : STOPS[stop], d = b * (kIdx + 1), edgeCut = a * (kIdx + 1);
   const e = 1 - Math.pow(1 - drop, 3);
   const lift = 70 * (1 - e);
   for (let q = 1; q < d; q++) {
@@ -683,8 +693,8 @@ function toCanvas(e) {
 const handAt = px => Math.max(-0.3, Math.min(NOTCHES - 0.7, (px - TX0) / ((TX1 - TX0) / (NOTCHES - 1))));
 function nearestStop(px) {
   const v = (px - BX) / BW;
-  let best = 0;
-  for (let i = 1; i < STOPS.length; i++) if (Math.abs(val(i) - v) < Math.abs(val(best) - v)) best = i;
+  let best = ZERO;
+  for (let i = 0; i < STOPS.length; i++) if (Math.abs(val(i) - v) < Math.abs(val(best) - v)) best = i;
   return best;
 }
 function stopDemo() {

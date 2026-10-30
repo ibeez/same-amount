@@ -63,7 +63,7 @@
   aria-label="Fig. 07. The same amount. A bar of hand-lettered letters, part of it filled with the name of a fraction in warm shimmering colors. Drag the red edge to change the fraction. Push the throttle under the bar to cut the bar into finer pieces: two times, three times, up to six times as many. The cuts change and the top line reads, for example, 2/3 = 8/12, but the filled letters never move. Arrow keys: left and right move the throttle, up and down move the edge."></canvas>
 
 <div class="controls">
-  <button id="btn-sound" type="button">sound: on</button>
+  <button id="btn-sound" type="button">sound: off</button>
   <button class="sr" id="btn-replay" type="button">Replay the demo</button>
 </div>
 <div class="sr" aria-live="polite" id="live"></div>
@@ -327,6 +327,8 @@ function audioInit() {
   if (!AC) return;
   ac = new AC();
   buildGraph();
+  // the button says off until the first touch actually starts the sound
+  if (!muted) document.getElementById("btn-sound").textContent = "sound: on";
   let stepI = 0, next = ac.currentTime + 0.12;
   timer = setInterval(() => {
     while (next < ac.currentTime + 0.12) { music(stepI, next); stepI = (stepI + 1) % 64; next += EIGHTH; }
@@ -447,7 +449,7 @@ function sfx(kind, arg, at) {
 
 const btnSound = document.getElementById("btn-sound");
 btnSound.onclick = () => {
-  audioInit();
+  if (!ac) { audioInit(); return; }
   muted = !muted;
   if (master) master.gain.setTargetAtTime(muted ? 0 : 0.9, ac.currentTime, 0.03);
   btnSound.textContent = muted ? "sound: off" : "sound: on";
